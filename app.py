@@ -1,60 +1,127 @@
 import streamlit as st
 import pandas as pd
 
-# --- APP TITLE ---
-st.set_page_config(page_title="Carpet Inventory Search", layout="wide")
-st.title("🧵 Carpet Inventory Search App")
+# ------------------------------
+# STREAMLIT PAGE CONFIG
+# ------------------------------
+st.set_page_config(page_title="Aryana Carpets - Dashboard", layout="wide")
+st.title("🧵 Aryana Carpets Dashboard")
 
-# --- FILE UPLOAD ---
-uploaded_file = st.file_uploader("Upload your Master Excel file", type=["xlsx", "xls"])
+# ------------------------------
+# FILE UPLOAD
+# ------------------------------
+uploaded_file = st.file_uploader("📂 Upload Master Excel File", type=["xlsx", "xls"])
 
 if uploaded_file:
     try:
-        # Load only the "Inventory - Aryana" sheet
-        df = pd.read_excel(uploaded_file, sheet_name="Inventory - Aryana")
+        # Load both sheets
+        inventory_df = pd.read_excel(uploaded_file, sheet_name="Inventory - Aryana", header=0)
+        sales_df = pd.read_excel(uploaded_file, sheet_name="Asia Carpets Sales", header=0)
 
-        st.success(f"Loaded 'Inventory - Aryana' with {df.shape[0]} rows and {df.shape[1]} columns.")
+        # Create Tabs
+        tab1, tab2 = st.tabs(["📦 Inventory", "💰 Sales & Accounts"])
 
-        # --- SEARCH FILTERS ---
-        with st.expander("🔍 Search & Filters"):
-            serial_search = st.text_input("Search Serial No")
-            origin_search = st.text_input("Search by Origin / Manufacturer")
-            size_search = st.text_input("Search by Size")
-            status_filter = st.multiselect("Filter by Status", options=df["Current Status"].unique())
+        # ------------------------------
+        # TAB 1: INVENTORY MODULE
+        # ------------------------------
+        with tab1:
+            st.subheader("📦 Inventory - Aryana")
 
-        # --- APPLY FILTERS ---
-        filtered_df = df.copy()
+            # Search Filters
+            with st.expander("🔍 Search & Filters"):
+                serial_search = st.text_input("Search Serial No")
+                origin_search = st.text_input("Search by Origin / Manufacturer")
+                size_search = st.text_input("Search by Size")
+                status_filter = st.multiselect(
+                    "Filter by Status", options=inventory_df["Current Status"].dropna().unique()
+                )
 
-        if serial_search:
-            filtered_df = filtered_df[filtered_df["Serial No"].astype(str).str.contains(serial_search, case=False, na=False)]
+            # Apply Filters
+            filtered_inventory = inventory_df.copy()
 
-        if origin_search:
-            filtered_df = filtered_df[filtered_df["Carpet Origin & Manufacturer"].str.contains(origin_search, case=False, na=False)]
+            if serial_search:
+                filtered_inventory = filtered_inventory[
+                    filtered_inventory["Serial No"].astype(str).str.contains(serial_search, case=False, na=False)
+                ]
 
-        if size_search:
-            filtered_df = filtered_df[filtered_df["Size"].astype(str).str.contains(size_search, case=False, na=False)]
+            if origin_search:
+                filtered_inventory = filtered_inventory[
+                    filtered_inventory["Carpet Origin & Manufacturer"].astype(str).str.contains(origin_search, case=False, na=False)
+                ]
 
-        if status_filter:
-            filtered_df = filtered_df[filtered_df["Current Status"].isin(status_filter)]
+            if size_search:
+                filtered_inventory = filtered_inventory[
+                    filtered_inventory["Size"].astype(str).str.contains(size_search, case=False, na=False)
+                ]
 
-        # --- SHOW RESULTS ---
-        st.subheader("📊 Search Results")
-        st.dataframe(filtered_df, use_container_width=True)
+            if status_filter:
+                filtered_inventory = filtered_inventory[
+                    filtered_inventory["Current Status"].isin(status_filter)
+                ]
 
-        st.info(f"Showing {filtered_df.shape[0]} results")
+            # Show Results
+            st.dataframe(filtered_inventory, use_container_width=True)
+            st.info(f"Showing {filtered_inventory.shape[0]} of {inventory_df.shape[0]} carpets")
 
-        # --- DOWNLOAD FILTERED DATA ---
-        @st.cache_data
-        def convert_to_excel(dataframe):
-            return dataframe.to_csv(index=False).encode("utf-8")
+            # Download
+            @st.cache_data
+            def convert_to_csv(df):
+                return df.to_csv(index=False).encode("utf-8")
 
-        csv = convert_to_excel(filtered_df)
-        st.download_button(
-            "⬇️ Download Filtered Data",
-            data=csv,
-            file_name="filtered_inventory.csv",
-            mime="text/csv"
-        )
+            csv_inventory = convert_to_csv(filtered_inventory)
+            st.download_button(
+                "⬇️ Download Filtered Inventory",
+                data=csv_inventory,
+                file_name="filtered_inventory.csv",
+                mime="text/csv"
+            )
 
-    except ValueError:
-        st.error("The uploaded Excel file does not contain a sheet named 'Inventory - Aryana'. Please check and upload again.")
+        # ------------------------------
+        # TAB 2: SALES MODULE
+        # ------------------------------
+        with tab2:
+            st.subheader("💰 Asia Carpets Sales - Accounting")
+
+            # Ensure Date is datetime
+            sales_df["Date"] = pd.to_datetime(sales_df["Date"], errors="coerce")
+
+            # Date Range Filter
+            min_date, max_date = sales_df["Date"].min(), sales_df["Date"].max()
+            date_range = st.date_input("Select Date Range", [min_date, max_date])
+
+            filtered_sales = sales_df[
+                (sales_df["Date"] >= pd.to_datetime(date_range[0])) &
+                (sales_df["Date"] <= pd.to_datetime(date_range[1]))
+            ]
+
+            # KPIs
+            total_sales = filtered_sales["Amount in BHD"].sum()
+            st.metric("Total Sales (BHD)", f"{total_sales:,.2f}")
+
+            # Group by Item
+            sales_by_item = (
+                filtered_sales.groupby("Items Details")["Amount in BHD"]
+                .sum()
+                .sort_values(ascending=False)
+            )
+
+            st.subheader("📊 Sales by Item")
+            st.bar_chart(sales_by_item)
+
+            # Show Table
+            st.subheader("🗂️ Sales Records")
+            st.dataframe(filtered_sales, use_container_width=True)
+
+            # Download
+            csv_sales = convert_to_csv(filtered_sales)
+            st.download_button(
+                "⬇️ Download Sales Report",
+                data=csv_sales,
+                file_name="sales_report.csv",
+                mime="text/csv"
+            )
+
+    except ValueError as e:
+        st.error("⚠️ The uploaded file must contain both 'Inventory - Aryana' and 'Asia Carpets Sales' sheets.")
+else:
+    st.info("Please upload your master Excel file to continue.")
